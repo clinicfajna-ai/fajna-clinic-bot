@@ -1,1 +1,0 @@
-# fajna-clinic-bot
