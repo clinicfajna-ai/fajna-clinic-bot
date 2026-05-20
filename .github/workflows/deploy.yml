@@ -27,3 +27,13 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy search-worker.js --name fajna-clinic-rag
+          secrets: |
+            OPENAI_API_KEY
+            PINECONE_API_KEY
+            PINECONE_HOST
+            GOOGLE_SCRIPT_LOG_URL
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          PINECONE_HOST: ${{ secrets.PINECONE_HOST }}
+          GOOGLE_SCRIPT_LOG_URL: ${{ secrets.GOOGLE_SCRIPT_LOG_URL }}
