@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "google-spreadsheet": "^4.1.1",
+    "google-auth-library": "^9.0.0",
+    "openai": "^4.28.0",
+    "@pinecone-database/pinecone": "^2.0.1"
+  }
+}
