@@ -27,13 +27,39 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy search-worker.js --name fajna-clinic-rag
-          secrets: |
-            OPENAI_API_KEY
-            PINECONE_API_KEY
-            PINECONE_HOST
-            GOOGLE_SCRIPT_LOG_URL
+
+      - name: Set OpenAI Key
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: secret put OPENAI_API_KEY --name fajna-clinic-rag
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          PINECONE_HOST: ${{ secrets.PINECONE_HOST }}
-          GOOGLE_SCRIPT_LOG_URL: ${{ secrets.GOOGLE_SCRIPT_LOG_URL }}
+          CLOUDFLARE_SECRET_VALUE: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Set Pinecone Key
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: secret put PINECONE_API_KEY --name fajna-clinic-rag
+        env:
+          CLOUDFLARE_SECRET_VALUE: ${{ secrets.PINECONE_API_KEY }}
+
+      - name: Set Pinecone Host
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: secret put PINECONE_HOST --name fajna-clinic-rag
+        env:
+          CLOUDFLARE_SECRET_VALUE: ${{ secrets.PINECONE_HOST }}
+
+      - name: Set Google Log URL
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: secret put GOOGLE_SCRIPT_LOG_URL --name fajna-clinic-rag
+        env:
+          CLOUDFLARE_SECRET_VALUE: ${{ secrets.GOOGLE_SCRIPT_LOG_URL }}
