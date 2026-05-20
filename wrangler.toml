@@ -1,3 +1,8 @@
 name = "clinic-rag-sync"
 main = "search-worker.js"
 compatibility_date = "2024-05-10"
+[vars]
+OPENAI_API_KEY = ""
+PINECONE_API_KEY = ""
+PINECONE_HOST = ""
+GOOGLE_SCRIPT_LOG_URL = ""
