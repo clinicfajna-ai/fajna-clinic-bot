@@ -80,7 +80,7 @@ async function sync() {
     });
   }
 
-  // --- ЕТАП 3: Глибока синхронізація (Видалення сиріт з Pinecone) ---
+// --- ЕТАП 3: Глибока синхронізація (Видалення сиріт з Pinecone) ---
   console.log("=== ЕТАП 3: Видалення 'сиріт' з Pinecone ===");
   const currentIds = new Set(finalRows.map(r => r.id));
   
@@ -88,7 +88,8 @@ async function sync() {
   let paginationToken = undefined;
   
   do {
-    const list = await index.listPaginated({ limit: 1000, paginationToken });
+    // ВАЖЛИВО: limit не може бути більше 100
+    const list = await index.listPaginated({ limit: 100, paginationToken });
     if (list.vectors) {
       allPineconeIds.push(...list.vectors.map(v => v.id));
     }
