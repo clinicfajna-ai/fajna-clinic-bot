@@ -18,7 +18,7 @@ async function sync() {
   const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
   const index = pc.index('clinic-base'); 
 
-  console.log("=== ЕТАП 1: Оновлення листів ===");
+  console.log("=== ЕТАП 1: Оновлення листів Google Sheets ===");
   
   // 1. Оновлення прайсу
   const priceRes = await fetch("https://des.fajna.clinic/for_inboost/get_routines.php?json=1");
@@ -34,10 +34,7 @@ async function sync() {
   const docSheet = doc.sheetsByTitle['doctors_knowledge_base'];
   await docSheet.clearRows();
   await docSheet.setHeaderRow(['Інформація про лікаря']);
-  await docSheet.addRows(docData.map(docItem => {
-    let docText = `Інформація про спеціаліста. Лікар: ${docItem.title}\nСпеціалізація: ${docItem.profession}\nНапрямки: ${(docItem.main_way || []).join(", ")}\nПацієнти: ${(docItem.patients || []).join(", ")}\nПрактикує з: ${docItem.first_practice_year}\nФілії: ${(docItem.clinics || []).join(" | ")}\nOnline: ${docItem.online_consultations}\nСторінка: ${docItem.url}\n\nПро лікаря: ${docItem.about || ""}\n\n${docItem.public_activity ? "Громадська діяльність: " + docItem.public_activity + "\n\n" : ""}${docItem.services ? "Послуги:\n" + docItem.services.map(s => "• " + s.name + " (Код: " + s.code + ")").join("\n") : ""}`;
-    return [docText];
-  }));
+  await docSheet.addRows(docData.map(d => [`Лікар: ${d.title}\nСпеціалізація: ${d.profession}\nНапрямки: ${(d.main_way || []).join(", ")}\nПрактикує з: ${d.first_practice_year}\nФілії: ${(d.clinics || []).join(" | ")}\nOnline: ${d.online_consultations}\n\nПро: ${d.about || ""}\n\nПослуги:\n${d.services ? d.services.map(s => "• " + s.name + " (" + s.code + ")").join("\n") : ""}`]));
 
   // 3. Зведення спеціальностей
   const specSheet = doc.sheetsByTitle['specialties_summary'];
@@ -50,7 +47,7 @@ async function sync() {
   }));
   await specSheet.addRows(Object.keys(specialtyMap).map(spec => [`Зведення: ${spec}\nФахівці:\n${specialtyMap[spec].join("\n")}`]));
 
-  console.log("\n=== ЕТАП 2: Формування Vector_Data ===");
+  console.log("\n=== ЕТАП 2: Формування масиву даних ===");
   const vectorSheet = doc.sheetsByTitle['Vector_Data'];
   const oldRows = await vectorSheet.getRows();
   const existingMap = new Map(oldRows.map(r => [r._rawData[0], {text: r._rawData[1], status: r._rawData[2]}]));
@@ -83,16 +80,28 @@ async function sync() {
     });
   }
 
-  // --- ЕТАП 3: Синхронізація (Видалення старого з Pinecone) ---
-  console.log("=== ЕТАП 3: Синхронізація (Видалення старого) ===");
+  // --- ЕТАП 3: Глибока синхронізація (Видалення сиріт) ---
+  console.log("=== ЕТАП 3: Видалення 'сиріт' з Pinecone ===");
   const currentIds = new Set(finalRows.map(r => r.id));
-  const idsToDelete = [...existingMap.keys()].filter(id => !currentIds.has(id));
+  
+  // Отримуємо ВСІ записи з Pinecone, враховуючи пагінацію
+  let allPineconeIds = [];
+  let paginationToken = undefined;
+  do {
+    const list = await index.list({ limit: 1000, paginationToken });
+    allPineconeIds.push(...list.vectors.map(v => v.id));
+    paginationToken = list.pagination?.next;
+  } while (paginationToken);
+
+  const idsToDelete = allPineconeIds.filter(id => !currentIds.has(id));
   
   if (idsToDelete.length > 0) {
     for (let i = 0; i < idsToDelete.length; i += 100) {
       await index.deleteMany(idsToDelete.slice(i, i + 100));
     }
     console.log(`Видалено застарілих записів: ${idsToDelete.length}`);
+  } else {
+    console.log("Pinecone чистий, видалень не потрібно.");
   }
 
   // --- Оновлення таблиці ---
@@ -110,10 +119,7 @@ async function sync() {
 
   // --- Оновлення статусів ---
   await vectorSheet.loadCells(`C2:C${finalRows.length + 1}`);
-  for (let i = 0; i < finalRows.length; i++) {
-     const cell = vectorSheet.getCell(i + 1, 2); 
-     cell.value = 'uploaded';
-  }
+  for (let i = 0; i < finalRows.length; i++) vectorSheet.getCell(i + 1, 2).value = 'uploaded';
   await vectorSheet.saveUpdatedCells();
   
   console.log("=== СИНХРОНІЗАЦІЮ ЗАВЕРШЕНО УСПІШНО! ===");
