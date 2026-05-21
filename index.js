@@ -177,3 +177,66 @@ async function sync() {
       
       let status = "pending";
       if (existingMap.has(generatedId) && existingMap.get(generatedId).text === text) {
+        status = existingMap.get(generatedId).status;
+      }
+
+      finalRows.push({ id: generatedId, text, status, chunk_type });
+    });
+  }
+
+  await vectorSheet.clearRows();
+  await vectorSheet.addRows(finalRows);
+  console.log(`Лист Vector_Data оновлено. Всього рядків: ${finalRows.length}`);
+
+  const toUpload = finalRows.filter(r => r.status === 'pending');
+  console.log("До завантаження в Pinecone: " + toUpload.length);
+
+  const batchSize = 100;
+  for (let i = 0; i < toUpload.length; i += batchSize) {
+    const chunk = toUpload.slice(i, i + batchSize);
+    try {
+      const inputs = chunk.map(item => item.text);
+
+      const embeddingResponse = await openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: inputs,
+      });
+
+      const vectors = chunk.map((item, idx) => {
+        const safeText = String(item.text).replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
+        let metadata = { text: safeText, chunk_type: item.chunk_type };
+        
+        return {
+          id: String(item.id),
+          values: embeddingResponse.data[idx].embedding,
+          metadata: metadata
+        };
+      });
+
+      await index.upsert(vectors);
+      console.log("Успішно завантажено пачку з " + i + " по " + (i + chunk.length));
+    } catch (e) {
+      console.error("Помилка завантаження пачки на індексі " + i + ": " + e.message);
+    }
+  }
+
+  const totalCount = finalRows.length;
+  if (totalCount > 0) {
+    await vectorSheet.loadCells({
+      startRowIndex: 1,
+      endRowIndex: totalCount + 1,
+      startColumnIndex: 2,
+      endColumnIndex: 3
+    });
+
+    for (let i = 0; i < totalCount; i++) {
+      const cell = vectorSheet.getCell(i + 1, 2);
+      cell.value = 'uploaded';
+    }
+    await vectorSheet.saveUpdatedCells();
+  }
+
+  console.log("=== СИНХРОНІЗАЦІЮ ЗАВЕРШЕНО УСПІШНО! ===");
+}
+
+sync();
