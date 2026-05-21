@@ -108,18 +108,14 @@ async function sync() {
     await index.upsert(chunk.map((item, idx) => ({ id: item.id, values: embeddingResponse.data[idx].embedding, metadata: { text: item.text, chunk_type: item.chunk_type } })));
   }
 
-  // --- Оновлення статусів (ВИПРАВЛЕНО) ---
-  // 1. Завантажуємо клітинки в пам'ять об'єкта vectorSheet
-  await vectorSheet.loadCells(`C2:C${finalRows.length + 1}`); 
-  
-  // 2. Проходимося циклом і міняємо значення безпосередньо у vectorSheet
+  // --- Оновлення статусів ---
+  await vectorSheet.loadCells(`C2:C${finalRows.length + 1}`);
   for (let i = 0; i < finalRows.length; i++) {
-     // getCell(rowIndex, columnIndex) -> рядок i+1 (бо 0-індекс), колонка 2 (це C)
      const cell = vectorSheet.getCell(i + 1, 2); 
      cell.value = 'uploaded';
   }
-  
-  // 3. Зберігаємо зміни
   await vectorSheet.saveUpdatedCells();
   
   console.log("=== СИНХРОНІЗАЦІЮ ЗАВЕРШЕНО УСПІШНО! ===");
+}
+sync();
