@@ -80,48 +80,35 @@ async function sync() {
     });
   }
 
-  // --- ЕТАП 3: Глибока синхронізація (Видалення сиріт) ---
+ // --- ЕТАП 3: Глибока синхронізація (Видалення сиріт) ---
   console.log("=== ЕТАП 3: Видалення 'сиріт' з Pinecone ===");
   const currentIds = new Set(finalRows.map(r => r.id));
   
-  // Отримуємо ВСІ записи з Pinecone, враховуючи пагінацію
+  // Використовуємо listPaginated, який працює у вашій версії SDK
   let allPineconeIds = [];
   let paginationToken = undefined;
+  
   do {
-    const list = await index.list({ limit: 1000, paginationToken });
-    allPineconeIds.push(...list.vectors.map(v => v.id));
+    // Вказуємо limit, щоб отримати вектори пачками
+    const list = await index.listPaginated({ limit: 1000, paginationToken });
+    
+    // Збираємо ID
+    if (list.vectors) {
+      allPineconeIds.push(...list.vectors.map(v => v.id));
+    }
+    
+    // Переходимо до наступної сторінки, якщо вона є
     paginationToken = list.pagination?.next;
   } while (paginationToken);
 
   const idsToDelete = allPineconeIds.filter(id => !currentIds.has(id));
   
   if (idsToDelete.length > 0) {
+    console.log(`Знайдено ${idsToDelete.length} застарілих записів, видаляємо...`);
     for (let i = 0; i < idsToDelete.length; i += 100) {
       await index.deleteMany(idsToDelete.slice(i, i + 100));
     }
-    console.log(`Видалено застарілих записів: ${idsToDelete.length}`);
+    console.log("Видалення завершено.");
   } else {
     console.log("Pinecone чистий, видалень не потрібно.");
   }
-
-  // --- Оновлення таблиці ---
-  await vectorSheet.clearRows();
-  await vectorSheet.setHeaderRow(['id', 'text', 'status', 'chunk_type']);
-  await vectorSheet.addRows(finalRows.map(r => [r.id, r.text, r.status, r.chunk_type]));
-  
-  // --- Завантаження нових ---
-  const toUpload = finalRows.filter(r => r.status === 'pending');
-  for (let i = 0; i < toUpload.length; i += 100) {
-    const chunk = toUpload.slice(i, i + 100);
-    const embeddingResponse = await openai.embeddings.create({ model: "text-embedding-3-small", input: chunk.map(c => c.text) });
-    await index.upsert(chunk.map((item, idx) => ({ id: item.id, values: embeddingResponse.data[idx].embedding, metadata: { text: item.text, chunk_type: item.chunk_type } })));
-  }
-
-  // --- Оновлення статусів ---
-  await vectorSheet.loadCells(`C2:C${finalRows.length + 1}`);
-  for (let i = 0; i < finalRows.length; i++) vectorSheet.getCell(i + 1, 2).value = 'uploaded';
-  await vectorSheet.saveUpdatedCells();
-  
-  console.log("=== СИНХРОНІЗАЦІЮ ЗАВЕРШЕНО УСПІШНО! ===");
-}
-sync();
