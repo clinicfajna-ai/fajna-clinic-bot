@@ -23,114 +23,43 @@ async function sync() {
 
   console.log("=== ЕТАП 1: Оновлення листів з API ===");
   
-  console.log("Завантаження прайсу з DocDream...");
+  // Оновлення прайсу
   const priceRes = await fetch("https://des.fajna.clinic/for_inboost/get_routines.php?json=1");
   const priceData = await priceRes.json();
+  if (!Array.isArray(priceData)) throw new Error("API прайсу повернуло не масив!");
+  
   const priceSheet = doc.sheetsByTitle['all_services'];
   await priceSheet.clearRows();
-  
-  const priceRowsToInsert = priceData.map(item => [
-    item.code || "",
-    item.group || "Загальне",
-    item.name || "",
-    item.price || "0",
-    item.durationsingle || ""
-  ]);
-  
-  if(priceRowsToInsert.length > 0) {
-    await priceSheet.addRows(priceRowsToInsert);
-  }
-  console.log(`Оновлено лист all_services: ${priceRowsToInsert.length} рядків.`);
+  await priceSheet.addRows(priceData.map(item => [item.code || "", item.group || "Загальне", item.name || "", item.price || "0", item.durationsingle || ""]));
 
-  console.log("Завантаження лікарів з DocDream...");
+  // Оновлення лікарів
   const docRes = await fetch("https://des.fajna.clinic/for_inboost/get_docs.php?json=1");
   const docData = await docRes.json();
+  if (!Array.isArray(docData)) throw new Error("API лікарів повернуло не масив!");
+  
   const docSheet = doc.sheetsByTitle['doctors_knowledge_base'];
   await docSheet.clearRows();
-  
-  const docRowsToInsert = docData.map(docItem => {
-    let docText = "Інформація про спеціаліста. Лікар: " + docItem.title + "\n";
-    docText += "Спеціалізація: " + docItem.profession + "\n";
-    docText += "Напрямки: " + (docItem.main_way ? docItem.main_way.join(", ") : "") + "\n";
-    docText += "Пацієнти: " + (docItem.patients ? docItem.patients.join(", ") : "") + "\n";
-    docText += "Практикує з: " + docItem.first_practice_year + "\n";
-    docText += "Філії де приймає: " + (docItem.clinics ? docItem.clinics.join(" | ") : "") + "\n";
-    docText += "Online-консультації: " + docItem.online_consultations + "\n";
-    if (docItem.languages) docText += "Мови: " + docItem.languages + "\n";
-    docText += "Сторінка: " + docItem.url + "\n\n";
-    docText += "Про лікаря:\n" + (docItem.about || "") + "\n\n";
-    
-    if (docItem.public_activity) {
-      docText += "Громадська діяльність:\n" + docItem.public_activity + "\n\n";
-    }
-    
-    if (docItem.services && docItem.services.length > 0) {
-      docText += "Послуги лікаря:\n";
-      docItem.services.forEach(s => {
-        docText += "• " + s.name + " (Код: " + s.code + ")\n";
-      });
-    }
+  await docSheet.addRows(docData.map(docItem => {
+    let docText = `Інформація про спеціаліста. Лікар: ${docItem.title}\nСпеціалізація: ${docItem.profession}\nНапрямки: ${(docItem.main_way || []).join(", ")}\nПацієнти: ${(docItem.patients || []).join(", ")}\nПрактикує з: ${docItem.first_practice_year}\nФілії: ${(docItem.clinics || []).join(" | ")}\nOnline: ${docItem.online_consultations}\nСторінка: ${docItem.url}\n\nПро лікаря: ${docItem.about || ""}\n\n${docItem.public_activity ? "Громадська діяльність: " + docItem.public_activity + "\n\n" : ""}${docItem.services ? "Послуги:\n" + docItem.services.map(s => "• " + s.name + " (Код: " + s.code + ")").join("\n") : ""}`;
     return [docText];
-  });
-  
-  if (docRowsToInsert.length > 0) {
-    await docSheet.addRows(docRowsToInsert);
-  }
-  console.log(`Оновлено лист doctors_knowledge_base: ${docRowsToInsert.length} рядків.`);
+  }));
 
-  console.log("Формування зведених карток по спеціальностях...");
-  let specialtyMap = {};
-  
-  docData.forEach(docItem => {
-    if(docItem.main_way && docItem.main_way.length > 0) {
-      docItem.main_way.forEach(spec => {
-        let cleanSpec = spec.trim();
-        if(!specialtyMap[cleanSpec]) {
-          specialtyMap[cleanSpec] = [];
-        }
-        specialtyMap[cleanSpec].push(`• ${docItem.title} (${docItem.profession})`);
-      });
-    }
-  });
-
+  // Зведення спеціальностей
   const specSheet = doc.sheetsByTitle['specialties_summary'];
-  if (specSheet) {
-    await specSheet.clearRows();
-    let specRowsToInsert = [];
-    
-    for (let spec in specialtyMap) {
-      let specText = `Зведення лікарів за напрямком: ${spec}\n`;
-      specText += `У клініці приймають такі фахівці:\n`;
-      specText += specialtyMap[spec].join("\n");
-      specText += `\n(Щоб дізнатися деталі, освіту чи ціни конкретного лікаря, шукайте за його прізвищем).`;
-      
-      specRowsToInsert.push([specText]);
-    }
-    
-    if (specRowsToInsert.length > 0) {
-      await specSheet.addRows(specRowsToInsert);
-    }
-    console.log(`Оновлено лист specialties_summary: ${specRowsToInsert.length} карток.`);
-  } else {
-    console.log("Лист specialties_summary не знайдено, пропускаємо цей крок. Створіть його у таблиці!");
-  }
+  await specSheet.clearRows();
+  let specialtyMap = {};
+  docData.forEach(d => (d.main_way || []).forEach(s => {
+    if(!specialtyMap[s.trim()]) specialtyMap[s.trim()] = [];
+    specialtyMap[s.trim()].push(`• ${d.title} (${d.profession})`);
+  }));
+  await specSheet.addRows(Object.keys(specialtyMap).map(spec => [`Зведення: ${spec}\nФахівці:\n${specialtyMap[spec].join("\n")}`]));
 
   console.log("\n=== ЕТАП 2: Формування Vector_Data ===");
-  
   const vectorSheet = doc.sheetsByTitle['Vector_Data'];
   const oldRows = await vectorSheet.getRows();
-  const existingMap = new Map();
+  const existingMap = new Map(oldRows.map(r => [r._rawData[0], {text: r._rawData[1], status: r._rawData[2]}]));
 
-  oldRows.forEach(row => {
-    const id = row._rawData[0];
-    if (id) {
-      existingMap.set(id, {
-        text: row._rawData[1],
-        status: row._rawData[2]
-      });
-    }
-  });
-
+  let finalRows = [];
   const sheetsToCollect = [
     { name: 'all_services', prefix: 'price', default_chunk_type: 'price' },
     { name: 'doctors_knowledge_base', prefix: 'doc', default_chunk_type: 'doctor' },
@@ -143,100 +72,37 @@ async function sync() {
     { name: 'insurance', prefix: 'ins', default_chunk_type: 'insurance' }
   ];
 
-  let finalRows = [];
-
   for (const config of sheetsToCollect) {
     const sheet = doc.sheetsByTitle[config.name];
     if (!sheet) continue;
-
     const rows = await sheet.getRows();
-
     rows.forEach((row) => {
-      let text = row._rawData[0];
-      let chunk_type = config.default_chunk_type;
-
+      let text = row._rawData[0] || "";
       if (config.name === 'all_services') {
-        const code = row._rawData[0];
-        const category = row._rawData[1] || 'Загальне';
-        const name = row._rawData[2];
-        const price = row._rawData[3] || '0';
-        const duration = row._rawData[4];
-        
-        if (!code || !name || code === 'Код послуги') return;
-        
-        text = "Категорія: " + category + ". Назва послуги: " + name + ". Код: " + code + ". Ціна: " + price + " грн.";
-        if (duration) {
-          text += " Тривалість: " + duration + " хв.";
-        }
-      } else {
-        if (!text || text === 'Питання' || text.includes('Загальна інформація')) return;
+        text = `Категорія: ${row._rawData[1] || 'Загальне'}. Послуга: ${row._rawData[2]}. Код: ${row._rawData[0]}. Ціна: ${row._rawData[3] || '0'} грн. Тривалість: ${row._rawData[4] || ''} хв.`;
       }
-
-      const textHash = crypto.createHash('md5').update(text).digest('hex').substring(0, 15);
-      const generatedId = config.prefix + '_' + textHash;
-      
-      let status = "pending";
-      if (existingMap.has(generatedId) && existingMap.get(generatedId).text === text) {
-        status = existingMap.get(generatedId).status;
-      }
-
-      finalRows.push({ id: generatedId, text, status, chunk_type });
+      if (!text || text === 'Питання' || text.includes('Загальна інформація')) return;
+      const id = config.prefix + '_' + crypto.createHash('md5').update(String(text)).digest('hex').substring(0, 15);
+      finalRows.push({ id, text, status: existingMap.has(id) && existingMap.get(id).text === text ? existingMap.get(id).status : 'pending', chunk_type: config.default_chunk_type });
     });
   }
 
   await vectorSheet.clearRows();
   await vectorSheet.addRows(finalRows);
-  console.log(`Лист Vector_Data оновлено. Всього рядків: ${finalRows.length}`);
-
+  
   const toUpload = finalRows.filter(r => r.status === 'pending');
-  console.log("До завантаження в Pinecone: " + toUpload.length);
+  console.log("До завантаження: " + toUpload.length);
 
-  const batchSize = 100;
-  for (let i = 0; i < toUpload.length; i += batchSize) {
-    const chunk = toUpload.slice(i, i + batchSize);
-    try {
-      const inputs = chunk.map(item => item.text);
-
-      const embeddingResponse = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: inputs,
-      });
-
-      const vectors = chunk.map((item, idx) => {
-        const safeText = String(item.text).replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
-        let metadata = { text: safeText, chunk_type: item.chunk_type };
-        
-        return {
-          id: String(item.id),
-          values: embeddingResponse.data[idx].embedding,
-          metadata: metadata
-        };
-      });
-
-      await index.upsert(vectors);
-      console.log("Успішно завантажено пачку з " + i + " по " + (i + chunk.length));
-    } catch (e) {
-      console.error("Помилка завантаження пачки на індексі " + i + ": " + e.message);
-    }
+  for (let i = 0; i < toUpload.length; i += 100) {
+    const chunk = toUpload.slice(i, i + 100);
+    const embeddingResponse = await openai.embeddings.create({ model: "text-embedding-3-small", input: chunk.map(c => c.text) });
+    await index.upsert(chunk.map((item, idx) => ({ id: item.id, values: embeddingResponse.data[idx].embedding, metadata: { text: item.text, chunk_type: item.chunk_type } })));
   }
 
-  const totalCount = finalRows.length;
-  if (totalCount > 0) {
-    await vectorSheet.loadCells({
-      startRowIndex: 1,
-      endRowIndex: totalCount + 1,
-      startColumnIndex: 2,
-      endColumnIndex: 3
-    });
-
-    for (let i = 0; i < totalCount; i++) {
-      const cell = vectorSheet.getCell(i + 1, 2);
-      cell.value = 'uploaded';
-    }
-    await vectorSheet.saveUpdatedCells();
-  }
-
-  console.log("=== СИНХРОНІЗАЦІЮ ЗАВЕРШЕНО УСПІШНО! ===");
+  const cells = await vectorSheet.loadCells(`C2:C${finalRows.length + 1}`);
+  for (let i = 0; i < finalRows.length; i++) cells.getCell(i, 0).value = 'uploaded';
+  await vectorSheet.saveUpdatedCells();
+  console.log("=== УСПІШНО ===");
 }
 
 sync();
