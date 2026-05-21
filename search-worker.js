@@ -33,7 +33,7 @@ try {
   // 2. Формування payload для Pinecone
   const pineconePayload = {
     vector: vector,
-    topK: 5,
+    topK: 15,
     includeMetadata: true
   };
 
