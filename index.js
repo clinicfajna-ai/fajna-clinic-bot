@@ -1,7 +1,7 @@
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
-const { Pinecone } = require('@pinecone-database/pinecone'); // РОЗКОМЕНТОВАНО
-const OpenAI = require('openai'); // РОЗКОМЕНТОВАНО
+const { Pinecone } = require('@pinecone-database/pinecone');
+const OpenAI = require('openai');
 const crypto = require('crypto');
 
 async function sync() {
@@ -17,14 +17,12 @@ async function sync() {
   const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, auth);
   await doc.loadInfo();
   
-  // ПІДКЛЮЧЕННЯ ДО ШІ ТА БД (РОЗКОМЕНТОВАНО)
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
-  const index = pc.index('clinic-base'); // Переконайтесь, що назва індексу правильна!
+  const index = pc.index('clinic-base'); 
 
   console.log("=== ЕТАП 1: Оновлення листів з API ===");
   
-  // 1. Оновлення прайсу
   console.log("Завантаження прайсу з DocDream...");
   const priceRes = await fetch("https://des.fajna.clinic/for_inboost/get_routines.php?json=1");
   const priceData = await priceRes.json();
@@ -44,7 +42,6 @@ async function sync() {
   }
   console.log(`Оновлено лист all_services: ${priceRowsToInsert.length} рядків.`);
 
-  // 2. Оновлення лікарів
   console.log("Завантаження лікарів з DocDream...");
   const docRes = await fetch("https://des.fajna.clinic/for_inboost/get_docs.php?json=1");
   const docData = await docRes.json();
@@ -53,22 +50,22 @@ async function sync() {
   
   const docRowsToInsert = docData.map(docItem => {
     let docText = "Інформація про спеціаліста. Лікар: " + docItem.title + "\n";
-    docText += "**Спеціалізація:** " + docItem.profession + "\n";
-    docText += "**Напрямки:** " + (docItem.main_way ? docItem.main_way.join(", ") : "") + "\n";
-    docText += "**Пацієнти:** " + (docItem.patients ? docItem.patients.join(", ") : "") + "\n";
-    docText += "**Практикує з:** " + docItem.first_practice_year + "\n";
-    docText += "**Філії де приймає:** " + (docItem.clinics ? docItem.clinics.join(" | ") : "") + "\n";
-    docText += "**Online-консультації:** " + docItem.online_consultations + "\n";
-    if (docItem.languages) docText += "**Мови:** " + docItem.languages + "\n";
-    docText += "**Сторінка:** " + docItem.url + "\n\n";
+    docText += "Спеціалізація: " + docItem.profession + "\n";
+    docText += "Напрямки: " + (docItem.main_way ? docItem.main_way.join(", ") : "") + "\n";
+    docText += "Пацієнти: " + (docItem.patients ? docItem.patients.join(", ") : "") + "\n";
+    docText += "Практикує з: " + docItem.first_practice_year + "\n";
+    docText += "Філії де приймає: " + (docItem.clinics ? docItem.clinics.join(" | ") : "") + "\n";
+    docText += "Online-консультації: " + docItem.online_consultations + "\n";
+    if (docItem.languages) docText += "Мови: " + docItem.languages + "\n";
+    docText += "Сторінка: " + docItem.url + "\n\n";
     docText += "Про лікаря:\n" + (docItem.about || "") + "\n\n";
     
     if (docItem.public_activity) {
-      docText += "**Громадська діяльність:**\n" + docItem.public_activity + "\n\n";
+      docText += "Громадська діяльність:\n" + docItem.public_activity + "\n\n";
     }
     
     if (docItem.services && docItem.services.length > 0) {
-      docText += "**Послуги лікаря:**\n";
+      docText += "Послуги лікаря:\n";
       docItem.services.forEach(s => {
         docText += "• " + s.name + " (Код: " + s.code + ")\n";
       });
@@ -81,6 +78,42 @@ async function sync() {
   }
   console.log(`Оновлено лист doctors_knowledge_base: ${docRowsToInsert.length} рядків.`);
 
+  console.log("Формування зведених карток по спеціальностях...");
+  let specialtyMap = {};
+  
+  docData.forEach(docItem => {
+    if(docItem.main_way && docItem.main_way.length > 0) {
+      docItem.main_way.forEach(spec => {
+        let cleanSpec = spec.trim();
+        if(!specialtyMap[cleanSpec]) {
+          specialtyMap[cleanSpec] = [];
+        }
+        specialtyMap[cleanSpec].push(`• ${docItem.title} (${docItem.profession})`);
+      });
+    }
+  });
+
+  const specSheet = doc.sheetsByTitle['specialties_summary'];
+  if (specSheet) {
+    await specSheet.clearRows();
+    let specRowsToInsert = [];
+    
+    for (let spec in specialtyMap) {
+      let specText = `Зведення лікарів за напрямком: ${spec}\n`;
+      specText += `У клініці приймають такі фахівці:\n`;
+      specText += specialtyMap[spec].join("\n");
+      specText += `\n(Щоб дізнатися деталі, освіту чи ціни конкретного лікаря, шукайте за його прізвищем).`;
+      
+      specRowsToInsert.push([specText]);
+    }
+    
+    if (specRowsToInsert.length > 0) {
+      await specSheet.addRows(specRowsToInsert);
+    }
+    console.log(`Оновлено лист specialties_summary: ${specRowsToInsert.length} карток.`);
+  } else {
+    console.log("Лист specialties_summary не знайдено, пропускаємо цей крок. Створіть його у таблиці!");
+  }
 
   console.log("\n=== ЕТАП 2: Формування Vector_Data ===");
   
@@ -101,6 +134,7 @@ async function sync() {
   const sheetsToCollect = [
     { name: 'all_services', prefix: 'price', default_chunk_type: 'price' },
     { name: 'doctors_knowledge_base', prefix: 'doc', default_chunk_type: 'doctor' },
+    { name: 'specialties_summary', prefix: 'spec', default_chunk_type: 'specialty' },
     { name: 'preparation', prefix: 'prep', default_chunk_type: 'preparation' },
     { name: 'general_info', prefix: 'info', default_chunk_type: 'general_info' },
     { name: 'vaccination', prefix: 'vac', default_chunk_type: 'vaccination' },
@@ -143,74 +177,3 @@ async function sync() {
       
       let status = "pending";
       if (existingMap.has(generatedId) && existingMap.get(generatedId).text === text) {
-        status = existingMap.get(generatedId).status;
-      }
-
-      finalRows.push({ id: generatedId, text, status, chunk_type });
-    });
-  }
-
-  await vectorSheet.clearRows();
-  await vectorSheet.addRows(finalRows);
-  console.log(`Лист Vector_Data оновлено. Всього рядків: ${finalRows.length}`);
-
-  // ========================================================
-  // ЕТАП 3: БЛОК ЗАВАНТАЖЕННЯ У PINECONE (РОЗКОМЕНТОВАНО)
-  // ========================================================
-  
-  const toUpload = finalRows.filter(r => r.status === 'pending');
-  console.log("До завантаження в Pinecone: " + toUpload.length);
-
-  const batchSize = 100;
-  for (let i = 0; i < toUpload.length; i += batchSize) {
-    const chunk = toUpload.slice(i, i + batchSize);
-    try {
-      const inputs = chunk.map(item => item.text);
-
-      // Створення векторів через OpenAI
-      const embeddingResponse = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: inputs,
-      });
-
-      // Формування об'єктів для Pinecone
-      const vectors = chunk.map((item, idx) => {
-        const safeText = String(item.text).replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
-        let metadata = { text: safeText, chunk_type: item.chunk_type };
-        
-        return {
-          id: String(item.id),
-          values: embeddingResponse.data[idx].embedding,
-          metadata: metadata
-        };
-      });
-
-      // Відправка в базу
-      await index.upsert(vectors);
-      console.log("Успішно завантажено пачку з " + i + " по " + (i + chunk.length));
-    } catch (e) {
-      console.error("Помилка завантаження пачки на індексі " + i + ": " + e.message);
-    }
-  }
-
-  // Оновлення статусів у таблиці на 'uploaded'
-  const totalCount = finalRows.length;
-  if (totalCount > 0) {
-    await vectorSheet.loadCells({
-      startRowIndex: 1,
-      endRowIndex: totalCount + 1,
-      startColumnIndex: 2, // Зверніть увагу: це колонка C (статуси)
-      endColumnIndex: 3
-    });
-
-    for (let i = 0; i < totalCount; i++) {
-      const cell = vectorSheet.getCell(i + 1, 2);
-      cell.value = 'uploaded';
-    }
-    await vectorSheet.saveUpdatedCells();
-  }
-
-  console.log("=== СИНХРОНІЗАЦІЮ ЗАВЕРШЕНО УСПІШНО! ===");
-}
-
-sync();
