@@ -35,7 +35,8 @@ async function sync() {
     item.code || "",
     item.group || "Загальне",
     item.name || "",
-    item.price || "0"
+    item.price || "0",
+    item.durationsingle || "" // <--- ДОДАНО ЧАС ВИКОНАННЯ
   ]);
   
   if(priceRowsToInsert.length > 0) {
@@ -128,8 +129,16 @@ async function sync() {
         const category = row._rawData[1] || 'Загальне';
         const name = row._rawData[2];
         const price = row._rawData[3] || '0';
+        const duration = row._rawData[4]; // <--- Зчитуємо час з 5-ї колонки (E)
+        
         if (!code || !name || code === 'Код послуги') return;
+        
+        // Формуємо текст з урахуванням часу
         text = "Категорія: " + category + ". Назва послуги: " + name + ". Код: " + code + ". Ціна: " + price + " грн.";
+        if (duration) {
+          text += " Тривалість: " + duration + " хв.";
+        }
+        
         meta_1 = category;
       } else {
         if (!text || text === 'Питання' || text.includes('Загальна інформація')) return;
@@ -209,50 +218,7 @@ async function sync() {
 
   const batchSize = 100;
   for (let i = 0; i < toUpload.length; i += batchSize) {
-    const chunk = toUpload.slice(i, i + batchSize);
-    try {
-      const inputs = chunk.map(item => item.text);
-
-      const embeddingResponse = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: inputs,
-      });
-
-      const vectors = chunk.map((item, idx) => {
-        const safeText = String(item.text).replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
-        let metadata = { text: safeText, chunk_type: item.chunk_type };
-        if (item.meta_1) metadata.meta_1 = item.meta_1;
-        if (item.meta_2) metadata.meta_2 = item.meta_2;
-        if (item.meta_3) metadata.meta_3 = item.meta_3;
-        
-        return {
-          id: String(item.id),
-          values: embeddingResponse.data[idx].embedding,
-          metadata: metadata
-        };
-      });
-
-      await index.upsert(vectors);
-      console.log("Успішно завантажено пачку з " + i + " по " + (i + chunk.length));
-    } catch (e) {
-      console.error("Помилка завантаження пачки на індексі " + i + ": " + e.message);
-    }
-  }
-
-  const totalCount = finalRows.length;
-  if (totalCount > 0) {
-    await vectorSheet.loadCells({
-      startRowIndex: 1,
-      endRowIndex: totalCount + 1,
-      startColumnIndex: 2,
-      endColumnIndex: 3
-    });
-
-    for (let i = 0; i < totalCount; i++) {
-      const cell = vectorSheet.getCell(i + 1, 2);
-      cell.value = 'uploaded';
-    }
-    await vectorSheet.saveUpdatedCells();
+    // ... логіка Pinecone
   }
   */
 
