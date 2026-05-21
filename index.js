@@ -1,7 +1,7 @@
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
-// const { Pinecone } = require('@pinecone-database/pinecone');
-// const OpenAI = require('openai');
+const { Pinecone } = require('@pinecone-database/pinecone'); // РОЗКОМЕНТОВАНО
+const OpenAI = require('openai'); // РОЗКОМЕНТОВАНО
 const crypto = require('crypto');
 
 async function sync() {
@@ -17,10 +17,10 @@ async function sync() {
   const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, auth);
   await doc.loadInfo();
   
-  // ТИМЧАСОВО ВІДКЛЮЧЕНО ДЛЯ ТЕСТУ
-  // const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  // const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
-  // const index = pc.index('clinic-base');
+  // ПІДКЛЮЧЕННЯ ДО ШІ ТА БД (РОЗКОМЕНТОВАНО)
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+  const index = pc.index('clinic-base'); // Переконайтесь, що назва індексу правильна!
 
   console.log("=== ЕТАП 1: Оновлення листів з API ===");
   
@@ -155,10 +155,9 @@ async function sync() {
   console.log(`Лист Vector_Data оновлено. Всього рядків: ${finalRows.length}`);
 
   // ========================================================
-  // БЛОК ЗАВАНТАЖЕННЯ У PINECONE - ТИМЧАСОВО ЗАКОМЕНТОВАНО
+  // ЕТАП 3: БЛОК ЗАВАНТАЖЕННЯ У PINECONE (РОЗКОМЕНТОВАНО)
   // ========================================================
   
-  /*
   const toUpload = finalRows.filter(r => r.status === 'pending');
   console.log("До завантаження в Pinecone: " + toUpload.length);
 
@@ -168,11 +167,13 @@ async function sync() {
     try {
       const inputs = chunk.map(item => item.text);
 
+      // Створення векторів через OpenAI
       const embeddingResponse = await openai.embeddings.create({
         model: "text-embedding-3-small",
         input: inputs,
       });
 
+      // Формування об'єктів для Pinecone
       const vectors = chunk.map((item, idx) => {
         const safeText = String(item.text).replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
         let metadata = { text: safeText, chunk_type: item.chunk_type };
@@ -184,6 +185,7 @@ async function sync() {
         };
       });
 
+      // Відправка в базу
       await index.upsert(vectors);
       console.log("Успішно завантажено пачку з " + i + " по " + (i + chunk.length));
     } catch (e) {
@@ -191,12 +193,13 @@ async function sync() {
     }
   }
 
+  // Оновлення статусів у таблиці на 'uploaded'
   const totalCount = finalRows.length;
   if (totalCount > 0) {
     await vectorSheet.loadCells({
       startRowIndex: 1,
       endRowIndex: totalCount + 1,
-      startColumnIndex: 2,
+      startColumnIndex: 2, // Зверніть увагу: це колонка C (статуси)
       endColumnIndex: 3
     });
 
@@ -206,9 +209,8 @@ async function sync() {
     }
     await vectorSheet.saveUpdatedCells();
   }
-  */
 
-  console.log("ТЕСТОВИЙ РЕЖИМ: Збір даних успішний, метадані видалено, відправку до Pinecone відключено.");
+  console.log("=== СИНХРОНІЗАЦІЮ ЗАВЕРШЕНО УСПІШНО! ===");
 }
 
 sync();
