@@ -18,27 +18,31 @@ async function sync() {
   const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
   const index = pc.index('clinic-base'); 
 
-  // --- ЕТАП 1: Оновлення листів з API ---
+  console.log("=== ЕТАП 1: Оновлення листів ===");
+  
+  // 1. Оновлення прайсу
   const priceRes = await fetch("https://des.fajna.clinic/for_inboost/get_routines.php?json=1");
   const priceData = await priceRes.json();
   const priceSheet = doc.sheetsByTitle['all_services'];
-  await priceSheet.loadHeaderRow();
-  await priceSheet.clearRange('A2:E5000');
+  await priceSheet.clearRows();
+  await priceSheet.setHeaderRow(['Код', 'Категорія', 'Назва', 'Ціна', 'Тривалість']);
   await priceSheet.addRows(priceData.map(item => [item.code || "", item.group || "Загальне", item.name || "", item.price || "0", item.durationsingle || ""]));
 
+  // 2. Оновлення лікарів
   const docRes = await fetch("https://des.fajna.clinic/for_inboost/get_docs.php?json=1");
   const docData = await docRes.json();
   const docSheet = doc.sheetsByTitle['doctors_knowledge_base'];
-  await docSheet.loadHeaderRow();
-  await docSheet.clearRange('A2:A5000');
+  await docSheet.clearRows();
+  await docSheet.setHeaderRow(['Інформація про лікаря']);
   await docSheet.addRows(docData.map(docItem => {
     let docText = `Інформація про спеціаліста. Лікар: ${docItem.title}\nСпеціалізація: ${docItem.profession}\nНапрямки: ${(docItem.main_way || []).join(", ")}\nПацієнти: ${(docItem.patients || []).join(", ")}\nПрактикує з: ${docItem.first_practice_year}\nФілії: ${(docItem.clinics || []).join(" | ")}\nOnline: ${docItem.online_consultations}\nСторінка: ${docItem.url}\n\nПро лікаря: ${docItem.about || ""}\n\n${docItem.public_activity ? "Громадська діяльність: " + docItem.public_activity + "\n\n" : ""}${docItem.services ? "Послуги:\n" + docItem.services.map(s => "• " + s.name + " (Код: " + s.code + ")").join("\n") : ""}`;
     return [docText];
   }));
 
+  // 3. Зведення спеціальностей
   const specSheet = doc.sheetsByTitle['specialties_summary'];
-  await specSheet.loadHeaderRow();
-  await specSheet.clearRange('A2:A5000');
+  await specSheet.clearRows();
+  await specSheet.setHeaderRow(['Зведення']);
   let specialtyMap = {};
   docData.forEach(d => (d.main_way || []).forEach(s => {
     if(!specialtyMap[s.trim()]) specialtyMap[s.trim()] = [];
@@ -46,7 +50,7 @@ async function sync() {
   }));
   await specSheet.addRows(Object.keys(specialtyMap).map(spec => [`Зведення: ${spec}\nФахівці:\n${specialtyMap[spec].join("\n")}`]));
 
-  // --- ЕТАП 2: Формування масиву finalRows ---
+  console.log("\n=== ЕТАП 2: Формування Vector_Data ===");
   const vectorSheet = doc.sheetsByTitle['Vector_Data'];
   const oldRows = await vectorSheet.getRows();
   const existingMap = new Map(oldRows.map(r => [r._rawData[0], {text: r._rawData[1], status: r._rawData[2]}]));
@@ -92,7 +96,8 @@ async function sync() {
   }
 
   // --- Оновлення таблиці ---
-  await vectorSheet.clearRange('A2:D5000');
+  await vectorSheet.clearRows();
+  await vectorSheet.setHeaderRow(['id', 'text', 'status', 'chunk_type']);
   await vectorSheet.addRows(finalRows.map(r => [r.id, r.text, r.status, r.chunk_type]));
   
   // --- Завантаження нових ---
@@ -104,7 +109,6 @@ async function sync() {
   }
 
   // --- Оновлення статусів ---
-  await vectorSheet.loadHeaderRow();
   const cells = await vectorSheet.loadCells(`C2:C${finalRows.length + 1}`);
   for (let i = 0; i < finalRows.length; i++) cells.getCell(i, 0).value = 'uploaded';
   await vectorSheet.saveUpdatedCells();
