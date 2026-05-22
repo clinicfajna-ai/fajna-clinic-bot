@@ -8,7 +8,7 @@ const crypto = require('crypto');
 const PINECONE_INDEX    = process.env.PINECONE_INDEX || 'clinic-base';
 const BATCH_SIZE        = 100;
 const HASH_LENGTH       = 20;
-const EMBED_CONCURRENCY = 3; // max паралельних батчів embeddings
+const EMBED_CONCURRENCY = 3; 
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function makeId(prefix, text) {
@@ -40,7 +40,6 @@ function formatDoctorText(d) {
   ].join('\n');
 }
 
-// Виконує масив задач із обмеженням паралельності
 async function pAll(items, concurrency, fn) {
   const results = [];
   for (let i = 0; i < items.length; i += concurrency) {
@@ -66,7 +65,6 @@ async function withRetry(fn, retries = 3, delayMs = 1000) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function sync() {
-  // ── Ініціалізація клієнтів ──────────────────────────────────────────────────
   let serviceAccount;
   try {
     serviceAccount = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
@@ -90,10 +88,8 @@ async function sync() {
 
   await doc.loadInfo();
 
-  // ── ЕТАП 1: Оновлення аркушів Google Sheets ────────────────────────────────
   console.log('\n=== ЕТАП 1: Оновлення листів Google Sheets ===');
 
-  // 1а. Прайс
   console.log('  → Завантажую прайс...');
   const priceData = await withRetry(() =>
     fetchJSON('https://des.fajna.clinic/for_inboost/get_routines.php?json=1')
@@ -112,7 +108,6 @@ async function sync() {
   );
   console.log(`  ✓ Прайс: ${priceData.length} позицій`);
 
-  // 1б. Лікарі
   console.log('  → Завантажую лікарів...');
   const docData = await withRetry(() =>
     fetchJSON('https://des.fajna.clinic/for_inboost/get_docs.php?json=1')
@@ -123,7 +118,6 @@ async function sync() {
   await docSheet.addRows(docData.map(d => [formatDoctorText(d)]));
   console.log(`  ✓ Лікарі: ${docData.length} записів`);
 
-  // 1в. Зведення по спеціальностях
   const specialtyMap = {};
   docData.forEach(d =>
     (d.main_way || []).forEach(s => {
@@ -142,7 +136,6 @@ async function sync() {
   );
   console.log(`  ✓ Спеціальності: ${Object.keys(specialtyMap).length} категорій`);
 
-  // ── ЕТАП 2: Формування масиву для векторизації ──────────────────────────────
   console.log('\n=== ЕТАП 2: Формування масиву даних ===');
 
   const vectorSheet = doc.sheetsByTitle['Vector_Data'];
@@ -151,15 +144,14 @@ async function sync() {
     oldRows.map(r => [r._rawData[0], { text: r._rawData[1], status: r._rawData[2] }])
   );
 
-  // ВИДАЛЕНО: general_info та insurance
   const sheetsToCollect = [
-    { name: 'all_services',           prefix: 'price',  chunk_type: 'price'        },
-    { name: 'doctors_knowledge_base', prefix: 'doc',    chunk_type: 'doctor'       },
-    { name: 'specialties_summary',    prefix: 'spec',   chunk_type: 'specialty'    },
-    { name: 'preparation',            prefix: 'prep',   chunk_type: 'preparation'  },
-    { name: 'vaccination',            prefix: 'vac',    chunk_type: 'vaccination'  },
-    { name: 'upsell_logic',           prefix: 'upsell', chunk_type: 'upsell_rule'  },
-    { name: 'navigation',             prefix: 'nav',    chunk_type: 'navigation'   },
+    { name: 'all_services',           prefix: 'price'   },
+    { name: 'doctors_knowledge_base', prefix: 'doc'     },
+    { name: 'specialties_summary',    prefix: 'spec'    },
+    { name: 'preparation',            prefix: 'prep'    },
+    { name: 'vaccination',            prefix: 'vac'     },
+    { name: 'upsell_logic',           prefix: 'upsell'  },
+    { name: 'navigation',             prefix: 'nav'     },
   ];
 
   const finalRows = [];
@@ -186,7 +178,7 @@ async function sync() {
       const existing = existingMap.get(id);
       const status   = existing && existing.text === text ? existing.status : 'pending';
 
-      finalRows.push({ id, text, status, chunk_type: config.chunk_type });
+      finalRows.push({ id, text, status });
     });
 
     console.log(`  ✓ ${config.name}: ${rows.length} рядків`);
@@ -195,7 +187,6 @@ async function sync() {
   const pendingCount = finalRows.filter(r => r.status === 'pending').length;
   console.log(`\n  Разом: ${finalRows.length} записів, нових/змінених: ${pendingCount}`);
 
-  // ── ЕТАП 3: Видалення "сиріт" з Pinecone ───────────────────────────────────
   console.log('\n=== ЕТАП 3: Видалення "сиріт" з Pinecone ===');
 
   const currentIds     = new Set(finalRows.map(r => r.id));
@@ -222,14 +213,12 @@ async function sync() {
     console.log('  ✓ Pinecone чистий, видалень не потрібно');
   }
 
-  // ── ЕТАП 4: Збереження Vector_Data ─────────────────────────────────────────
   console.log('\n=== ЕТАП 4: Збереження Vector_Data ===');
   await vectorSheet.clearRows();
-  await vectorSheet.setHeaderRow(['id', 'text', 'status', 'chunk_type']);
-  await vectorSheet.addRows(finalRows.map(r => [r.id, r.text, r.status, r.chunk_type]));
+  await vectorSheet.setHeaderRow(['id', 'text', 'status']);
+  await vectorSheet.addRows(finalRows.map(r => [r.id, r.text, r.status]));
   console.log(`  ✓ Записано ${finalRows.length} рядків`);
 
-  // ── ЕТАП 5: Завантаження нових embeddings ──────────────────────────────────
   console.log('\n=== ЕТАП 5: Завантаження embeddings до Pinecone ===');
 
   const toUpload = finalRows.filter(r => r.status === 'pending');
@@ -253,11 +242,15 @@ async function sync() {
 
       await withRetry(() =>
         index.upsert(
-          chunk.map((item, idx) => ({
-            id:     item.id,
-            values: embRes.data[idx].embedding,
-            metadata: { text: item.text, chunk_type: item.chunk_type },
-          }))
+          chunk.map((item, idx) => {
+            const safeText = String(item.text).replace(/[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g, '');
+            
+            return {
+              id:     item.id,
+              values: embRes.data[idx].embedding,
+              metadata: { text: safeText },
+            };
+          })
         )
       );
 
@@ -268,7 +261,6 @@ async function sync() {
     console.log(`  ✓ Embeddings завантажено: ${toUpload.length} записів`);
   }
 
-  // ── ЕТАП 6: Оновлення статусів у таблиці ───────────────────────────────────
   console.log('\n=== ЕТАП 6: Оновлення статусів ===');
   await vectorSheet.loadCells(`C2:C${finalRows.length + 1}`);
   for (let i = 0; i < finalRows.length; i++) {
@@ -280,7 +272,6 @@ async function sync() {
   console.log('\n✅ СИНХРОНІЗАЦІЮ ЗАВЕРШЕНО УСПІШНО!');
 }
 
-// ─── Entry point ──────────────────────────────────────────────────────────────
 sync().catch(err => {
   console.error('\n❌ КРИТИЧНА ПОМИЛКА:', err.message);
   console.error(err.stack);
