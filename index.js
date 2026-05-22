@@ -103,11 +103,11 @@ async function sync() {
   await priceSheet.setHeaderRow(['Код', 'Категорія', 'Назва', 'Ціна', 'Тривалість']);
   await priceSheet.addRows(
     priceData.map(item => [
-      item.code           || '',
-      item.group          || 'Загальне',
-      item.name           || '',
-      item.price          || '0',
-      item.durationsingle || '',
+      item.code             || '',
+      item.group            || 'Загальне',
+      item.name             || '',
+      item.price            || '0',
+      item.durationsingle   || '',
     ])
   );
   console.log(`  ✓ Прайс: ${priceData.length} позицій`);
@@ -151,16 +151,15 @@ async function sync() {
     oldRows.map(r => [r._rawData[0], { text: r._rawData[1], status: r._rawData[2] }])
   );
 
+  // ВИДАЛЕНО: general_info та insurance
   const sheetsToCollect = [
     { name: 'all_services',           prefix: 'price',  chunk_type: 'price'        },
     { name: 'doctors_knowledge_base', prefix: 'doc',    chunk_type: 'doctor'       },
     { name: 'specialties_summary',    prefix: 'spec',   chunk_type: 'specialty'    },
     { name: 'preparation',            prefix: 'prep',   chunk_type: 'preparation'  },
-    { name: 'general_info',           prefix: 'info',   chunk_type: 'general_info' },
     { name: 'vaccination',            prefix: 'vac',    chunk_type: 'vaccination'  },
     { name: 'upsell_logic',           prefix: 'upsell', chunk_type: 'upsell_rule'  },
     { name: 'navigation',             prefix: 'nav',    chunk_type: 'navigation'   },
-    { name: 'insurance',              prefix: 'ins',    chunk_type: 'insurance'    },
   ];
 
   const finalRows = [];
