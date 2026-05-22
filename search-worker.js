@@ -1,40 +1,15 @@
-// Професійна функція генерації Sparse векторів (з фільтром стоп-слів)
-function generateSparseVector(text) {
-  const words = text.toLowerCase().match(/[\u0400-\u04FF\w]+/g) || [];
-  const stopWords = new Set(['на', 'до', 'за', 'від', 'про', 'для', 'що', 'як', 'це', 'та', 'чи', 'по', 'із', 'зі', 'ми', 'ви', 'не', 'або', 'вже', 'все', 'під']);
-  const termFrequencies = {};
-
-  words.forEach(word => {
-    if (stopWords.has(word) || word.length < 2) return; 
-
-    let hash = 0;
-    for (let i = 0; i < word.length; i++) {
-      hash = ((hash << 5) - hash) + word.charCodeAt(i);
-      hash |= 0;
-    }
-    const index = Math.abs(hash); 
-    const currentFreq = termFrequencies[index] || 0;
-    termFrequencies[index] = Math.min(currentFreq + 1, 3);
-  });
-
-  const indices = Object.keys(termFrequencies).map(Number);
-  const values = Object.values(termFrequencies).map(count => count * 2.0);
-
-  return { indices, values };
-}
-
 export default {
   async fetch(request, env, ctx) {
     if (request.method !== "POST") return new Response("Тільки POST запити", { status: 405 });
 
     try {
-      // ❌ ПРИБРАНО ПРИЙОМ ФІЛЬТРА: тепер приймаємо тільки query
+      // ❌ Прибрали filter, тепер приймаємо лише query
       const { query } = await request.json();
       if (!query) return new Response(JSON.stringify({ error: "Запит порожній" }), { status: 400 });
 
       let queryText = query.replace(/узд/gi, "ультразвукове дослідження");
 
-      // 1. Створення Embedding (Dense Vector від OpenAI)
+      // 1. Створення Embedding
       const embRes = await fetch("https://api.openai.com/v1/embeddings", {
         method: "POST",
         headers: {
@@ -54,15 +29,10 @@ export default {
       }
 
       const vector = embData.data[0].embedding;
-      
-      // 🟢 ГЕНЕРУЄМО SPARSE ВЕКТОР ІЗ ЗАПИТУ ПАЦІЄНТА
-      const sparse = generateSparseVector(queryText);
 
-      // 2. Формування payload для Pinecone
-      // ❌ ПРИБРАНО ПЕРЕДАЧУ ФІЛЬТРА: шукаємо відразу по всьому
+      // 2. Формування payload для Pinecone (Без фільтрів)
       const pineconePayload = {
         vector: vector,
-        sparseVector: sparse, // 🟢 ДОДАНО ДЛЯ ГІБРИДУ
         topK: 15,
         includeMetadata: true
       };
@@ -108,7 +78,7 @@ export default {
 
       const scoreString = topScore ? (topScore * 100).toFixed(1) + "%" : "0%";
 
-      // 3. Відправка логу у фоновому режимі (❌ прибрали filter з логів)
+      // 3. Відправка логу у фоновому режимі (❌ Прибрали filter з логів)
       if (env.GOOGLE_SCRIPT_LOG_URL) {
         const logPromise = fetch(env.GOOGLE_SCRIPT_LOG_URL, {
           method: "POST",
@@ -124,7 +94,7 @@ export default {
         ctx.waitUntil(logPromise);
       }
 
-      // ❌ ПРИБРАНО filter_applied з фінальної відповіді
+      // ❌ Прибрали filter_applied з відповіді
       return new Response(JSON.stringify({
         status: "success",
         query: queryText,
